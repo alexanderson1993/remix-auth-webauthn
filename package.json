@@ -1,8 +1,14 @@
 {
   "name": "remix-auth-webauthn",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
+  "author": "Alex Anderson",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alexanderson1993/react-auth-webauthn.git"
+  },
+  "bugs": "https://github.com/alexanderson1993/react-auth-webauthn/issues",
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "typecheck": "tsc --project tsconfig.json --noEmit",
