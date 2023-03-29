@@ -1,2 +1,2 @@
 export * from "./strategy";
-export * from "./WebAuthnForm";
+export * from "./handleFormSubmit";

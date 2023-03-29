@@ -18,7 +18,6 @@ import type {
   PublicKeyCredentialDescriptorJSON,
   RegistrationResponseJSON,
 } from "@simplewebauthn/typescript-types";
-import crypto from "tiny-webcrypto";
 
 interface WebAuthnAuthenticator {
   credentialID: string;
@@ -42,6 +41,7 @@ export interface UserDetails {
 }
 
 export interface WebAuthnOptionsResponse {
+  usernameAvailable: boolean | null;
   rp: {
     name: string;
     id: string;
@@ -89,7 +89,7 @@ export interface WebAuthnOptions<User> {
    */
   getUserDetails: (
     user: User | null
-  ) => Promise<UserDetails> | null | UserDetails | null;
+  ) => Promise<UserDetails | null> | UserDetails | null;
   /**
    * Find a user in the database with their username/email.
    * @param username
@@ -110,11 +110,11 @@ export interface WebAuthnOptions<User> {
  * This interface declares what the developer will receive from the strategy
  * to verify the user identity in their system.
  */
-export interface WebAuthnVerifyParams {
+export type WebAuthnVerifyParams = {
   authenticator: Omit<Authenticator, "userId">;
   type: "registration" | "authentication";
-  username: string;
-}
+  username: string | null;
+};
 
 export class WebAuthnStrategy<User> extends Strategy<
   User,
@@ -130,7 +130,7 @@ export class WebAuthnStrategy<User> extends Strategy<
   ) => Promise<WebAuthnAuthenticator[]> | WebAuthnAuthenticator[];
   getUserDetails: (
     user: User | null
-  ) => Promise<UserDetails> | null | UserDetails | null;
+  ) => Promise<UserDetails | null> | UserDetails | null;
   getUserByUsername: (username: string) => Promise<User | null> | User | null;
   getAuthenticatorById: (
     id: string
@@ -169,23 +169,30 @@ export class WebAuthnStrategy<User> extends Strategy<
       if (request.method === "GET") {
         let authenticators: WebAuthnAuthenticator[] = [];
         let userDetails: UserDetails | null = null;
+        let usernameAvailable: boolean | null = null;
         if (!user) {
           const username = new URL(request.url).searchParams.get("username");
-          user = await this.getUserByUsername(username || "");
+          if (username) {
+            usernameAvailable = true;
+            user = await this.getUserByUsername(username || "");
+          }
         }
 
         if (user) {
           authenticators = await this.getUserAuthenticators(user);
           userDetails = await this.getUserDetails(user);
+          usernameAvailable = false;
         }
 
+        const crypto = await import("tiny-webcrypto");
         const options: WebAuthnOptionsResponse = {
+          usernameAvailable,
           rp: { name: this.rpName, id: this.rpID },
           user: userDetails
             ? { displayName: userDetails.username, ...userDetails }
             : null,
           challenge: Buffer.from(
-            crypto.getRandomValues(new Uint8Array(32))
+            crypto.default.getRandomValues(new Uint8Array(32))
           ).toString("base64url"),
           authenticators: authenticators.map(
             ({ credentialID, transports }) => ({
@@ -225,12 +232,10 @@ export class WebAuthnStrategy<User> extends Strategy<
         throw new Error("Invalid passkey response JSON.");
       }
       const type = formData.get("type");
-      const username = formData.get("username");
-
-      if (typeof username !== "string")
-        throw new Error("Username is a required form value.");
-
+      let username = formData.get("username");
+      if (typeof username !== "string") username = null;
       if (type === "registration") {
+        if (!username) throw new Error("Username is a required form value.");
         const verification = await verifyRegistrationResponse({
           response: data as RegistrationResponseJSON,
           expectedChallenge,

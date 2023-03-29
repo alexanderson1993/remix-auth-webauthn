@@ -1,16 +1,17 @@
 {
   "name": "remix-auth-webauthn",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
   "author": "Alex Anderson",
+  "type": "module",
   "repository": {
     "type": "git",
     "url": "https://github.com/alexanderson1993/remix-auth-webauthn.git"
   },
   "bugs": "https://github.com/alexanderson1993/remix-auth-webauthn/issues",
   "scripts": {
-    "build": "tsc --project tsconfig.json",
+    "build": "tsc --project tsconfig.json && npx esbuild src/index.ts src/strategy.ts src/handleFormSubmit.tsx --outdir=build --platform=node --format=esm",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "lint": "eslint --ext .ts,.tsx src/",
     "test": "jest --config=config/jest.config.ts --passWithNoTests",
@@ -48,6 +49,7 @@
     "@typescript-eslint/eslint-plugin": "^4.23.0",
     "@typescript-eslint/parser": "^4.23.0",
     "babel-jest": "^26.6.3",
+    "esbuild": "^0.17.14",
     "eslint": "^7.26.0",
     "eslint-config-prettier": "^8.3.0",
     "eslint-plugin-jest": "^24.3.6",
