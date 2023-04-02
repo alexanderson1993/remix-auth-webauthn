@@ -209,6 +209,7 @@ export class WebAuthnStrategy<User> extends Strategy<
           status: 200,
           headers: {
             "Set-Cookie": await sessionStorage.commitSession(session),
+            "Cache-Control": "no-store",
           },
         });
       }
