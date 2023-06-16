@@ -4,9 +4,25 @@ import {
   startAuthentication,
   startRegistration,
 } from "@simplewebauthn/browser";
-import { nanoid } from "nanoid";
 
 export * from "@simplewebauthn/browser";
+
+export let nanoid = (t = 21) =>
+  crypto
+    .getRandomValues(new Uint8Array(t))
+    // eslint-disable-next-line unicorn/no-array-reduce
+    .reduce(
+      (t, e) =>
+        (t +=
+          (e &= 63) < 36
+            ? e.toString(36)
+            : e < 62
+            ? (e - 26).toString(36).toUpperCase()
+            : e > 62
+            ? "-"
+            : "_"),
+      ""
+    );
 
 export function handleFormSubmit(
   options: WebAuthnOptionsResponse,
