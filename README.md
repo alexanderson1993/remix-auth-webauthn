@@ -65,9 +65,11 @@ authenticator.use(
   new WebAuthnStrategy(
     {
       // The human-readable name of your app
+      // Type: string | (response:Response) => Promise<string> | string
       rpName: "Remix Auth WebAuthn",
       // The hostname of the website, determines where passkeys can be used
       // See https://www.w3.org/TR/webauthn-2/#relying-party-identifier
+      // Type: string | (response:Response) => Promise<string> | string
       rpID: env.NODE_ENV === "development" ? "localhost" : env.APP_URL,
       // Website URL (or array of URLs) where the registration can occur
       origin: env.APP_URL,
@@ -210,7 +212,7 @@ Authentication is a simpler process and only requires one button press:
 
 Since the username is stored with the passkey in the browser, the `username` field is not required for the authentication form.
 
-Two hidden form inputs are required on the form. The one named `response` will have its value dynamically set to the generated passkey after the user goes through the browser's passkey process. The `type` field should be either `registration` or `authentication`, and is also automatically set based on the value attribute of the button which submits the form.
+The second parameter of the `handleFormSubmit` function should be either `registration` or `authentication`. If it is not provided, it will default to `registration`, or use the value of the button which submits the form.
 
 Here's what the forms might look like in practice:
 
@@ -234,11 +236,8 @@ export default function Login() {
       <Form
         method="post"
         className="w-full space-y-2"
-        onSubmit={handleFormSubmit(options)(event)}
+        onSubmit={handleFormSubmit(options, "registration")(event)}
       >
-        {/* These two hidden form inputs are required on both forms */}
-        <input type="hidden" name="response" />
-        <input type="hidden" name="type" value="registration" />
         <div>
           <Label htmlFor="email">Email address</Label>
           <Input
@@ -278,9 +277,6 @@ export default function Login() {
         className="w-full space-y-2"
         onSubmit={handleFormSubmit(options)}
       >
-        {/* These two hidden form inputs are required on both forms */}
-        <input type="hidden" name="response" />
-        <input type="hidden" name="type" value="authentication" />
         <Button
           type="submit"
           name="authentication"

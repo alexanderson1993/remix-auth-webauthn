@@ -1,6 +1,6 @@
 {
   "name": "remix-auth-webauthn",
-  "version": "0.0.6",
+  "version": "0.0.8",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
   "author": "Alex Anderson",

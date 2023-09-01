@@ -26,6 +26,7 @@ export let nanoid = (t = 21) =>
 
 export function handleFormSubmit(
   options: WebAuthnOptionsResponse,
+  type: "authentication" | "registration" = "registration",
   generateUserId?: () => string
 ) {
   return async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -41,10 +42,10 @@ export function handleFormSubmit(
     }
 
     const target = event.currentTarget;
-    const type = target.type.value || event.nativeEvent.submitter.value;
+    type = event.nativeEvent.submitter.value || target.type.value || type;
     event.preventDefault();
 
-    target.response.value =
+    const responseValue =
       type === "authentication"
         ? JSON.stringify(
             await startAuthentication({
@@ -84,7 +85,29 @@ export function handleFormSubmit(
               extensions: { credProps: true },
             })
           );
-    target.type.value = type;
+
+    let responseEl = target.querySelector(
+      'input[name="response"]'
+    ) as HTMLInputElement;
+    if (!responseEl) {
+      responseEl = Object.assign(document.createElement("input"), {
+        type: "hidden",
+        name: "response",
+      });
+      target.prepend(responseEl);
+    }
+    responseEl.value = responseValue;
+
+    let typeEl = target.querySelector('input[name="type"]') as HTMLInputElement;
+    if (!typeEl) {
+      typeEl = Object.assign(document.createElement("input"), {
+        type: "hidden",
+        name: "type",
+      });
+      target.prepend(typeEl);
+    }
+    typeEl.value = type;
+
     target.submit();
   };
 }
