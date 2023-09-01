@@ -1,5 +1,5 @@
 import type * as React from "react";
-import type { WebAuthnOptionsResponse } from "./strategy";
+import type { WebAuthnOptionsResponse } from "./strategy.js";
 import {
   startAuthentication,
   startRegistration,

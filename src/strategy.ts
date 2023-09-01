@@ -63,12 +63,12 @@ export interface WebAuthnOptions<User> {
   /**
    * Relaying Party name - The human-readable name of your app
    */
-  rpName: string;
+  rpName: string | ((request: Request) => Promise<string> | string);
   /**
    * Relaying Party ID -The hostname of the website, determines where passkeys can be used
    * @link https://www.w3.org/TR/webauthn-2/#relying-party-identifier
    */
-  rpID: string;
+  rpID: string | ((request: Request) => Promise<string> | string);
   /**
    * Website URL (or array of URLs) where the registration can occur
    */
@@ -122,8 +122,8 @@ export class WebAuthnStrategy<User> extends Strategy<
 > {
   name = "webauthn";
 
-  rpName: string;
-  rpID: string;
+  rpName: string | ((request: Request) => Promise<string> | string);
+  rpID: string | ((request: Request) => Promise<string> | string);
   origin: string | string[];
   getUserAuthenticators: (
     user: User | null
@@ -166,6 +166,17 @@ export class WebAuthnStrategy<User> extends Strategy<
         return this.success(user, request, sessionStorage, options);
       }
 
+      const rp = {
+        name:
+          typeof this.rpName === "function"
+            ? await this.rpName(request)
+            : this.rpName,
+        id:
+          typeof this.rpID === "function"
+            ? await this.rpID(request)
+            : this.rpID,
+      };
+
       if (request.method === "GET") {
         let authenticators: WebAuthnAuthenticator[] = [];
         let userDetails: UserDetails | null = null;
@@ -185,9 +196,10 @@ export class WebAuthnStrategy<User> extends Strategy<
         }
 
         const crypto = await import("tiny-webcrypto");
+
         const options: WebAuthnOptionsResponse = {
           usernameAvailable,
-          rp: { name: this.rpName, id: this.rpID },
+          rp,
           user: userDetails
             ? { displayName: userDetails.username, ...userDetails }
             : null,
@@ -241,7 +253,7 @@ export class WebAuthnStrategy<User> extends Strategy<
           response: data as RegistrationResponseJSON,
           expectedChallenge,
           expectedOrigin: this.origin,
-          expectedRPID: this.rpID,
+          expectedRPID: rp.id,
         });
 
         if (verification.verified && verification.registrationInfo) {
@@ -282,7 +294,7 @@ export class WebAuthnStrategy<User> extends Strategy<
           response: authenticationData,
           expectedChallenge,
           expectedOrigin: this.origin,
-          expectedRPID: this.rpID,
+          expectedRPID: rp.id,
           authenticator: {
             ...authenticator,
             credentialPublicKey: Buffer.from(
