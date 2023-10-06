@@ -72,7 +72,10 @@ export interface WebAuthnOptions<User> {
   /**
    * Website URL (or array of URLs) where the registration can occur
    */
-  origin: string | string[];
+  origin:
+    | string
+    | string[]
+    | ((request: Request) => Promise<string | string[]> | string | string[]);
   /**
    * Return a list of authenticators associated with the user.
    * @param user object
