@@ -42,7 +42,7 @@ export function handleFormSubmit(
     }
 
     const target = event.currentTarget;
-    type = event.nativeEvent.submitter.value || target.type.value || type;
+    type = event?.nativeEvent?.submitter?.value || target.type?.value || type;
     event.preventDefault();
 
     const responseValue =

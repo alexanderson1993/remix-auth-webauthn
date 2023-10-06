@@ -124,7 +124,10 @@ export class WebAuthnStrategy<User> extends Strategy<
 
   rpName: string | ((request: Request) => Promise<string> | string);
   rpID: string | ((request: Request) => Promise<string> | string);
-  origin: string | string[];
+  origin:
+    | string
+    | string[]
+    | ((request: Request) => Promise<string | string[]> | string | string[]);
   getUserAuthenticators: (
     user: User | null
   ) => Promise<WebAuthnAuthenticator[]> | WebAuthnAuthenticator[];
@@ -176,6 +179,11 @@ export class WebAuthnStrategy<User> extends Strategy<
             ? await this.rpID(request)
             : this.rpID,
       };
+
+      const origin =
+        typeof this.origin === "function"
+          ? await this.origin(request)
+          : this.origin;
 
       if (request.method === "GET") {
         let authenticators: WebAuthnAuthenticator[] = [];
@@ -252,7 +260,7 @@ export class WebAuthnStrategy<User> extends Strategy<
         const verification = await verifyRegistrationResponse({
           response: data as RegistrationResponseJSON,
           expectedChallenge,
-          expectedOrigin: this.origin,
+          expectedOrigin: origin,
           expectedRPID: rp.id,
         });
 
@@ -293,7 +301,7 @@ export class WebAuthnStrategy<User> extends Strategy<
         const verification = await verifyAuthenticationResponse({
           response: authenticationData,
           expectedChallenge,
-          expectedOrigin: this.origin,
+          expectedOrigin: origin,
           expectedRPID: rp.id,
           authenticator: {
             ...authenticator,
