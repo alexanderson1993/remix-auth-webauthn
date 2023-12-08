@@ -26,8 +26,10 @@ export let nanoid = (t = 21) =>
 
 export function handleFormSubmit(
   options: WebAuthnOptionsResponse,
-  type: "authentication" | "registration" = "registration",
-  generateUserId?: () => string
+  config?: {
+    /** Generate an unique user ID when registering new users */
+    generateUserId?: () => string;
+  }
 ) {
   return async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     if (
@@ -40,9 +42,30 @@ export function handleFormSubmit(
     if (event.nativeEvent.submitter.formMethod === "get") {
       return true;
     }
+    const formData = new FormData(event.currentTarget);
+    const username = formData.get("username")?.toString();
 
     const target = event.currentTarget;
-    type = event?.nativeEvent?.submitter?.value || target.type?.value || type;
+    const submitButtonValue = event.nativeEvent.submitter.value;
+    const type =
+      submitButtonValue === "registration"
+        ? "registration"
+        : submitButtonValue === "authentication"
+        ? "authentication"
+        : undefined;
+
+    if (!type) {
+      throw new Error(
+        'When you submit this form, you need to indicate the intent - whether you are registering a new passkey or authenticating an existing passkey. By default, put `name="intent"` attribute on your submit buttons, and set the `value` attribute to either `"registration"` or `"authentication"`.'
+      );
+    }
+
+    if (type === "registration" && !username) {
+      throw new Error(
+        "You must provide a username field in your form, and set the `name` attribute to `username`."
+      );
+    }
+
     event.preventDefault();
 
     const responseValue =
@@ -62,9 +85,9 @@ export function handleFormSubmit(
               excludeCredentials: options.authenticators,
               rp: options.rp,
               user: {
-                id: generateUserId?.() || nanoid(),
-                name: target.email.value,
-                displayName: target.email.value,
+                id: config?.generateUserId?.() || nanoid(),
+                name: username!,
+                displayName: username!,
               },
               pubKeyCredParams: [
                 {

@@ -1,6 +1,6 @@
 import {
   json,
-  SessionStorage,
+  type SessionStorage,
   type SessionData,
 } from "@remix-run/server-runtime";
 import {
@@ -22,6 +22,21 @@ import type {
 interface WebAuthnAuthenticator {
   credentialID: string;
   transports: string[];
+}
+
+function uint8ArrayToBase64Url(uint8Array: Uint8Array) {
+  const base64String = btoa(String.fromCharCode(...uint8Array));
+  return base64String.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+}
+
+function base64UrlToUint8Array(string: string) {
+  const base64 = string.replace(/-/g, "+").replace(/_/g, "/");
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
 }
 
 export interface Authenticator {
@@ -76,6 +91,12 @@ export interface WebAuthnOptions<User> {
     | string
     | string[]
     | ((request: Request) => Promise<string | string[]> | string | string[]);
+
+  /**
+   * Session key to store the challenge in
+   */
+  challengeSessionKey?: string;
+
   /**
    * Return a list of authenticators associated with the user.
    * @param user object
@@ -93,6 +114,7 @@ export interface WebAuthnOptions<User> {
   getUserDetails: (
     user: User | null
   ) => Promise<UserDetails | null> | UserDetails | null;
+
   /**
    * Find a user in the database with their username/email.
    * @param username
@@ -156,6 +178,81 @@ export class WebAuthnStrategy<User> extends Strategy<
     this.getAuthenticatorById = options.getAuthenticatorById;
   }
 
+  async getRP(request: Request) {
+    const rp = {
+      name:
+        typeof this.rpName === "function"
+          ? await this.rpName(request)
+          : this.rpName,
+      id:
+        typeof this.rpID === "function" ? await this.rpID(request) : this.rpID,
+      origin:
+        typeof this.origin === "function"
+          ? await this.origin(request)
+          : this.origin,
+    };
+
+    return rp;
+  }
+
+  async generateOptions(
+    request: Request,
+    sessionStorage: SessionStorage<SessionData, SessionData>,
+    user: User | null
+  ) {
+    let session = await sessionStorage.getSession(
+      request.headers.get("Cookie")
+    );
+
+    let authenticators: WebAuthnAuthenticator[] = [];
+    let userDetails: UserDetails | null = null;
+    let usernameAvailable: boolean | null = null;
+
+    const rp = await this.getRP(request);
+
+    if (!user) {
+      const username = new URL(request.url).searchParams.get("username");
+      if (username) {
+        usernameAvailable = true;
+        user = await this.getUserByUsername(username || "");
+      }
+    }
+
+    if (user) {
+      authenticators = await this.getUserAuthenticators(user);
+      userDetails = await this.getUserDetails(user);
+      usernameAvailable = false;
+    }
+
+    const crypto = await import("tiny-webcrypto");
+
+    const options: WebAuthnOptionsResponse = {
+      usernameAvailable,
+      rp,
+      user: userDetails
+        ? { displayName: userDetails.username, ...userDetails }
+        : null,
+      challenge: uint8ArrayToBase64Url(
+        crypto.default.getRandomValues(new Uint8Array(32))
+      ),
+      authenticators: authenticators.map(({ credentialID, transports }) => ({
+        id: credentialID,
+        type: "public-key",
+        transports: transports as AuthenticatorTransportFuture[],
+      })),
+    };
+
+    session.set("challenge", options.challenge);
+
+    return json(options, {
+      status: 200,
+      headers: {
+        "Set-Cookie": await sessionStorage.commitSession(session),
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
   async authenticate(
     request: Request,
     sessionStorage: SessionStorage<SessionData, SessionData>,
@@ -167,82 +264,17 @@ export class WebAuthnStrategy<User> extends Strategy<
     try {
       let user: User | null = session.get(options.sessionKey) ?? null;
 
-      // User is already authenticated
-      if (user && request.method === "POST") {
-        return this.success(user, request, sessionStorage, options);
-      }
-
-      const rp = {
-        name:
-          typeof this.rpName === "function"
-            ? await this.rpName(request)
-            : this.rpName,
-        id:
-          typeof this.rpID === "function"
-            ? await this.rpID(request)
-            : this.rpID,
-      };
-
-      const origin =
-        typeof this.origin === "function"
-          ? await this.origin(request)
-          : this.origin;
-
-      if (request.method === "GET") {
-        let authenticators: WebAuthnAuthenticator[] = [];
-        let userDetails: UserDetails | null = null;
-        let usernameAvailable: boolean | null = null;
-        if (!user) {
-          const username = new URL(request.url).searchParams.get("username");
-          if (username) {
-            usernameAvailable = true;
-            user = await this.getUserByUsername(username || "");
-          }
-        }
-
-        if (user) {
-          authenticators = await this.getUserAuthenticators(user);
-          userDetails = await this.getUserDetails(user);
-          usernameAvailable = false;
-        }
-
-        const crypto = await import("tiny-webcrypto");
-
-        const options: WebAuthnOptionsResponse = {
-          usernameAvailable,
-          rp,
-          user: userDetails
-            ? { displayName: userDetails.username, ...userDetails }
-            : null,
-          challenge: Buffer.from(
-            crypto.default.getRandomValues(new Uint8Array(32))
-          ).toString("base64url"),
-          authenticators: authenticators.map(
-            ({ credentialID, transports }) => ({
-              id: credentialID,
-              type: "public-key",
-              transports: transports as AuthenticatorTransportFuture[],
-            })
-          ),
-        };
-
-        session.set("challenge", options.challenge);
-
-        throw json(options, {
-          status: 200,
-          headers: {
-            "Set-Cookie": await sessionStorage.commitSession(session),
-            "Cache-Control": "no-store",
-          },
-        });
-      }
+      const rp = await this.getRP(request);
 
       if (request.method !== "POST")
-        throw new Error(
-          "Only use the WebAuthn authenticate with POST or GET requests."
-        );
+        throw new Error("The WebAuthn strategy only supports POST requests.");
 
       const expectedChallenge = session.get("challenge");
+
+      if (!expectedChallenge)
+        throw new Error(
+          "Expected challenge not found. Please pass it as an option to the authenticate function."
+        );
 
       // Based on the authenticator response, either verify registration,
       // or verify authentication
@@ -257,13 +289,14 @@ export class WebAuthnStrategy<User> extends Strategy<
       }
       const type = formData.get("type");
       let username = formData.get("username");
+
       if (typeof username !== "string") username = null;
       if (type === "registration") {
         if (!username) throw new Error("Username is a required form value.");
         const verification = await verifyRegistrationResponse({
           response: data as RegistrationResponseJSON,
           expectedChallenge,
-          expectedOrigin: origin,
+          expectedOrigin: rp.origin,
           expectedRPID: rp.id,
         });
 
@@ -277,9 +310,8 @@ export class WebAuthnStrategy<User> extends Strategy<
           } = verification.registrationInfo;
 
           const newAuthenticator = {
-            credentialID: Buffer.from(credentialID).toString("base64url"),
-            credentialPublicKey:
-              Buffer.from(credentialPublicKey).toString("base64url"),
+            credentialID: uint8ArrayToBase64Url(credentialID),
+            credentialPublicKey: uint8ArrayToBase64Url(credentialPublicKey),
             counter,
             credentialBackedUp: credentialBackedUp ? 1 : 0,
             credentialDeviceType,
@@ -304,15 +336,14 @@ export class WebAuthnStrategy<User> extends Strategy<
         const verification = await verifyAuthenticationResponse({
           response: authenticationData,
           expectedChallenge,
-          expectedOrigin: origin,
+          expectedOrigin: rp.origin,
           expectedRPID: rp.id,
           authenticator: {
             ...authenticator,
-            credentialPublicKey: Buffer.from(
-              authenticator.credentialPublicKey,
-              "base64url"
+            credentialPublicKey: base64UrlToUint8Array(
+              authenticator.credentialPublicKey
             ),
-            credentialID: Buffer.from(authenticator.credentialID, "base64url"),
+            credentialID: base64UrlToUint8Array(authenticator.credentialID),
             transports: authenticator.transports.split(
               ","
             ) as AuthenticatorTransportFuture[],
@@ -334,7 +365,6 @@ export class WebAuthnStrategy<User> extends Strategy<
       // Verify either registration or authentication
       return this.success(user, request, sessionStorage, options);
     } catch (error) {
-      if (error instanceof Response) throw error;
       if (error instanceof Error) {
         return await this.failure(
           error.message,

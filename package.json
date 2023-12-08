@@ -1,6 +1,6 @@
 {
   "name": "remix-auth-webauthn",
-  "version": "0.0.11",
+  "version": "0.1.0",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
   "author": "Alex Anderson",
@@ -11,7 +11,7 @@
   },
   "bugs": "https://github.com/alexanderson1993/remix-auth-webauthn/issues",
   "scripts": {
-    "build": "tsc --project tsconfig.json && npx esbuild src/index.ts src/strategy.ts src/handleFormSubmit.tsx --outdir=build --platform=node --format=esm",
+    "build": "tsc --project tsconfig.json && npx esbuild src/* --outdir=build --platform=node --format=esm",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "lint": "eslint --ext .ts,.tsx src/",
     "test": "jest --config=config/jest.config.ts --passWithNoTests",
@@ -34,7 +34,7 @@
     "README.md"
   ],
   "peerDependencies": {
-    "@remix-run/server-runtime": "^1.0.0"
+    "@remix-run/server-runtime": "^2.0.0"
   },
   "devDependencies": {
     "@babel/core": "^7.14.2",
@@ -64,9 +64,9 @@
     "typescript": "^4.3.5"
   },
   "dependencies": {
-    "@simplewebauthn/browser": "^7.2.0",
-    "@simplewebauthn/server": "^7.2.0",
-    "remix-auth": "^3.4.0",
+    "@simplewebauthn/browser": "^8.3.4",
+    "@simplewebauthn/server": "^8.3.5",
+    "remix-auth": "^3.6.0",
     "tiny-webcrypto": "^1.0.1"
   }
 }

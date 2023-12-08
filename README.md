@@ -31,6 +31,14 @@ This strategy handles generating the challenge, storing it in session storage, p
 
 ## Setup
 
+### Install
+
+This project depends on `remix-auth`. Install it and [follow the setup instructions](https://github.com/sergiodxa/remix-auth).
+
+```
+npm install remix-auth remix-auth-webauthn
+```
+
 ### Database
 
 This strategy requires database access to store user Authenticators. The kind of database doesn't matter, but the strategy expects authenticators to match this interface (as provided by @simplewebauthn/server):
@@ -56,44 +64,118 @@ interface Authenticator {
 }
 ```
 
-### Create the strategy instance
+If you're just playing around, you can use this stub in-memory database.
 
-This strategy tries not to make assumptions about your database structure, so it requires several configuration options.
+<details>
+<summary>Show Code</summary>
 
 ```ts
-authenticator.use(
-  new WebAuthnStrategy(
-    {
-      // The human-readable name of your app
-      // Type: string | (response:Response) => Promise<string> | string
-      rpName: "Remix Auth WebAuthn",
-      // The hostname of the website, determines where passkeys can be used
-      // See https://www.w3.org/TR/webauthn-2/#relying-party-identifier
-      // Type: string | (response:Response) => Promise<string> | string
-      rpID: env.NODE_ENV === "development" ? "localhost" : env.APP_URL,
-      // Website URL (or array of URLs) where the registration can occur
-      origin: env.APP_URL,
-      // Return the list of authenticators associated with this user. You might
-      // need to transform a CSV string into a list of strings at this step.
-      getUserAuthenticators: async (user) => {
-        const authenticators = await getAuthenticators(user)
+// /app/db.server.ts
+import { type Authenticator } from "remix-auth-webauthn";
 
-        return authenticators.map((authenticator) => ({
-          ...authenticator
-          transports: authenticator.transports.split(",")
-        }));
-      },
-      // Transform the user object into the shape expected by the strategy.
-      // You can use a regular username, the users email address, or something else.
-      getUserDetails: (user) => ({ id: user!.id, username: user!.email }),
-      // Find a user in the database with their username/email.
-      getUserByUsername: (username) => getUserByEmail(username),
-    },
-    async function verify({ authenticator, type, username }) {
-     // ...
+export type User = { id: string; username: string };
+
+const authenticators = new Map<string, Authenticator>();
+const users = new Map<string, User>();
+export function getAuthenticatorById(id: string) {
+  return authenticators.get(id) || null;
+}
+export function getAuthenticators(user: User | null) {
+  if (!user) return [];
+
+  const userAuthenticators: Authenticator[] = [];
+  authenticators.forEach((authenticator) => {
+    if (authenticator.userId === user.id) {
+      userAuthenticators.push(authenticator);
     }
-  )
+  });
+
+  return userAuthenticators;
+}
+export function getUserByUsername(username: string) {
+  users.forEach((user) => {
+    if (user.username === username) {
+      return user;
+    }
+  });
+  return null;
+}
+export function getUserById(id: string) {
+  return users.get(id) || null;
+}
+export function createAuthenticator(
+  authenticator: Omit<Authenticator, "userId">,
+  userId: string
+) {
+  authenticators.set(authenticator.credentialID, { ...authenticator, userId });
+}
+export function createUser(username: string) {
+  const user = { id: Math.random().toString(36), username };
+  users.set(user.id, user);
+  return user;
+}
+```
+
+> Note that this database will reset every time your server restarts, but any passkeys you generate will still be present on your device. You'll have to manually delete them.
+
+</details>
+
+### Create the strategy instance
+
+This strategy tries not to make assumptions about your database structure, so it requires several configuration options. Also, to give you access to the methods on the WebAuthnStrategy instance, create and export it before passing it to `authenticator.use`.
+
+```ts
+// /app/authenticator.server.ts
+import { WebAuthnStrategy } from "remix-auth-webauthn";
+import {
+  getAuthenticators,
+  getUserByUsername,
+  getAuthenticatorById,
+  type User,
+  createUser,
+  createAuthenticator,
+  getUserById,
+} from "./db";
+import { Authenticator } from "remix-auth";
+import { sessionStorage } from "./session.server";
+
+export let authenticator = new Authenticator<User>(sessionStorage);
+
+export const webAuthnStrategy = new WebAuthnStrategy<User>(
+  {
+    // The human-readable name of your app
+    // Type: string | (response:Response) => Promise<string> | string
+    rpName: "Remix Auth WebAuthn",
+    // The hostname of the website, determines where passkeys can be used
+    // See https://www.w3.org/TR/webauthn-2/#relying-party-identifier
+    // Type: string | (response:Response) => Promise<string> | string
+    rpID: (request) => new URL(request.url).hostname,
+    // Website URL (or array of URLs) where the registration can occur
+    origin: (request) => new URL(request.url).origin,
+    // Return the list of authenticators associated with this user. You might
+    // need to transform a CSV string into a list of strings at this step.
+    getUserAuthenticators: async (user) => {
+      const authenticators = await getAuthenticators(user);
+
+      return authenticators.map((authenticator) => ({
+        ...authenticator,
+        transports: authenticator.transports.split(","),
+      }));
+    },
+    // Transform the user object into the shape expected by the strategy.
+    // You can use a regular username, the users email address, or something else.
+    getUserDetails: (user) =>
+      user ? { id: user.id, username: user.username } : null,
+    // Find a user in the database with their username/email.
+    getUserByUsername: (username) => getUserByUsername(username),
+    getAuthenticatorById: (id) => getAuthenticatorById(id),
+  },
+  async function verify({ authenticator, type, username }) {
+    // Verify Implementation Here
+  }
 );
+
+authenticator.use(webAuthnStrategy);
 ```
 
 ### Write your verify function
@@ -102,48 +184,46 @@ The verify function handles both the _registration_ and _authentication_ steps, 
 
 The verify function will receive an Authenticator object (without the userId), the provided username, and the type of verification - either `registration` or `authentication`.
 
-Note: You'll have to implement your own endpoints for adding additional authenticators to existing users.
+Note: It should be possible to expand this to support giving a single user multiple passkeys by checking to see if the user is already logged in.
 
 ```ts
-authenticator.use(
-  new WebAuthnStrategy(
-    {
-      // Options here...
-    },
-    async function verify({ authenticator, type, username }) {
-      let user: User | null = null;
-      const savedAuthenticator = await getAuthenticatorById(
-        authenticator.credentialID
-      );
-      if (type === "registration") {
-        // Check if the authenticator exists in the database
-        if (savedAuthenticator) {
-          throw new Error("Authenticator has already been registered.");
-        } else {
-          // Username is null for authentication verification,
-          // but required for registration verification.
-          // It is unlikely this error will ever be thrown,
-          // but it helps with the TypeScript checking
-          if (!username) throw new Error("Username is required.");
-          user = await getUserByEmail(username);
+const webAuthnStrategy = new WebAuthnStrategy(
+  {
+    // Options here...
+  },
+  async function verify({ authenticator, type, username }) {
+    let user: User | null = null;
+    const savedAuthenticator = await getAuthenticatorById(
+      authenticator.credentialID
+    );
+    if (type === "registration") {
+      // Check if the authenticator exists in the database
+      if (savedAuthenticator) {
+        throw new Error("Authenticator has already been registered.");
+      } else {
+        // Username is null for authentication verification,
+        // but required for registration verification.
+        // It is unlikely this error will ever be thrown,
+        // but it helps with the TypeScript checking
+        if (!username) throw new Error("Username is required.");
+        user = await getUserByUsername(username);
 
-          // Don't allow someone to register a passkey for
-          // someone elses account.
-          if (user) throw new Error("User already exists.");
+        // Don't allow someone to register a passkey for
+        // someone elses account.
+        if (user) throw new Error("User already exists.");
 
-          // Create a new user and authenticator
-          user = await createUser(username);
-          await createAuthenticator(authenticator, user.id);
-        }
-      } else if (type === "authentication") {
-        if (!savedAuthenticator) throw new Error("Authenticator not found");
-        user = await getUserById(savedAuthenticator.userId);
+        // Create a new user and authenticator
+        user = await createUser(username);
+        await createAuthenticator(authenticator, user.id);
       }
-
-      if (!user) throw new Error("User not found");
-      return user;
+    } else if (type === "authentication") {
+      if (!savedAuthenticator) throw new Error("Authenticator not found");
+      user = await getUserById(savedAuthenticator.userId);
     }
-  )
+
+    if (!user) throw new Error("User not found");
+    return user;
+  }
 );
 ```
 
@@ -153,42 +233,26 @@ The login page will need a loader to supply the WebAuthn options from the server
 
 ```ts
 // /app/routes/_auth.login.ts
-export let loader = async ({ request }: LoaderArgs) => {
-  await authenticator.isAuthenticated(request, { successRedirect: "/" });
+export async function loader({ request }: LoaderFunctionArgs) {
+  const user = await authenticator.isAuthenticated(request);
 
-  // When we pass a GET request to the authenticator, it will
-  // throw a response that includes the WebAuthn options and
-  // stores the challenge on session storage. To avoid needing
-  // a CatchBoundary, we catch the response here and return it as
-  // loader data.
-  try {
-    await authenticator.authenticate("webauthn", request);
-  } catch (response) {
-    if (response instanceof Response && response.status === 200) {
-      return response;
-    }
-    throw response;
-  }
-};
+  return webAuthnStrategy.generateOptions(request, sessionStorage, user);
+}
 
-export let action = async ({ request }: DataFunctionArgs) => {
-  // If you're using multiple authenticator strategies, you can
-  // invoke them here based on the form data that was submitted.
+export async function action({ request }: ActionFunctionArgs) {
   try {
     await authenticator.authenticate("webauthn", request, {
       successRedirect: "/",
     });
+    return { error: null };
   } catch (error) {
-    // You can catch the error here and resolve the message
-    // for more direct error handling.
+    // This allows us to return errors to the page without triggering the error boundary.
     if (error instanceof Response && error.status >= 400) {
       return { error: (await error.json()) as { message: string } };
     }
     throw error;
   }
-
-  return null;
-};
+}
 ```
 
 ## Set up the form
@@ -197,12 +261,13 @@ For ease-of-use, this strategy provides an `onSubmit` handler which performs the
 
 When registering, the process follows a few steps:
 
-1. The user requests registration by entering their desired username and pressing the button, which submits a GET request to get updated options.
-2. The server responds with whether the username is taken and if the user already has registered a passkey so the browser doesn't produce duplicates.
-3. The form must be submitted a second time, as POST this time, with the actual passkey for registration.
-4. The server verifies the passkey, creates the new user, and logs the user in.
+1. When first visiting the login page, the server will provide an options object which can be used for both registration and authentication.
+2. The user requests registration by entering their desired username and pressing the "Check Username" button, which submits a GET request to get updated options.
+3. The server responds with whether the username is taken and if the user already has registered a passkey so the browser doesn't produce duplicates.
+4. The form must be submitted a second time, as POST this time, with the actual passkey for registration.
+5. The server verifies the passkey, creates the new user, and logs the user in.
 
-Your registration form should include a required `username` field and a button for registration. The button should change state and behavior based on whether the options from the loader indicate that the username is available. This is demonstrated below.
+Your registration form should include a required `username` field and `<button name="intent" value="registration">` for triggering registration. You can use `formMethod="GET"` on a submit button to submit the value of the `username` field to the loader to check if the username is available. The `registration` button should change state and behavior based on whether the options from the loader indicate that the username is available. This is demonstrated below.
 
 Authentication is a simpler process and only requires one button press:
 
@@ -210,87 +275,34 @@ Authentication is a simpler process and only requires one button press:
 2. The user picks a passkey, and the form is generated and submitted to the server.
 3. The server verifies the passkey by checking it against the database, and logs the user in.
 
-Since the username is stored with the passkey in the browser, the `username` field is not required for the authentication form.
-
-The second parameter of the `handleFormSubmit` function should be either `registration` or `authentication`. If it is not provided, it will default to `registration`, or use the value of the button which submits the form.
+Since the username is stored with the passkey in the browser, the `username` field is not required for the authentication form, but you should include a submit button like so: `<button name="intent" value="authentication">` to trigger the authentication flow.
 
 Here's what the forms might look like in practice:
 
 ```tsx
 // /app/routes/_auth.login.ts
 export default function Login() {
-  let actionData = useActionData<Awaited<ReturnType<typeof action>>>();
-  let navigationData = useNavigation();
-  let options = useLoaderData<WebAuthnOptionsResponse>();
-
-  const [usernameAvailable, setUsernameAvailable] = useState(
-    options.usernameAvailable
-  );
-  useEffect(() => {
-    setUsernameAvailable(options.usernameAvailable);
-  }, [options]);
-
+  const options = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
   return (
-    <div className="flex flex-col gap-4 max-w-[300px] mx-auto">
-      <h1 className="text-2xl font-semibold">Log in to your account.</h1>
-      <Form
-        method="post"
-        className="w-full space-y-2"
-        onSubmit={handleFormSubmit(options, "registration")(event)}
+    <Form onSubmit={handleFormSubmit(options)} method="POST">
+      <label>
+        Username
+        <input type="text" name="username" />
+      </label>
+      <button formMethod="GET">Check Username</button>
+      <button
+        name="intent"
+        value="registration"
+        disabled={options.usernameAvailable !== true}
       >
-        <div>
-          <Label htmlFor="email">Email address</Label>
-          <Input
-            id="email"
-            type="email"
-            name="username"
-            required
-            placeholder="name@domain.com"
-            autoComplete="webauthn username"
-            onChange={() => setUsernameAvailable(null)}
-            disabled={navigationData.state === "submitting"}
-          />
-        </div>
-
-        <Button
-          type="submit"
-          name="registration"
-          value="registration"
-          formMethod={usernameAvailable ? "POST" : "GET"}
-          disabled={
-            navigationData.state === "submitting" || usernameAvailable === false
-          }
-          className="w-full"
-        >
-          {usernameAvailable === null
-            ? "Check Username with Passkey"
-            : "Sign Up with Passkey"}
-        </Button>
-        {usernameAvailable === false ? (
-          <p className="text-red-600">Username is taken</p>
-        ) : usernameAvailable === true ? (
-          <p className="text-green-600">Username available</p>
-        ) : null}
-      </Form>
-      <Form
-        method="post"
-        className="w-full space-y-2"
-        onSubmit={handleFormSubmit(options)}
-      >
-        <Button
-          type="submit"
-          name="authentication"
-          value="authentication"
-          disabled={navigationData.state === "submitting"}
-          className="w-full"
-        >
-          Sign In with Passkey
-        </Button>
-      </Form>
-      {actionData && "error" in actionData ? (
-        <p className="text-red-600">{actionData.error?.message}</p>
-      ) : null}
-    </div>
+        Register
+      </button>
+      <button name="intent" value="authentication">
+        Authenticate
+      </button>
+      {actionData?.error ? <div>{actionData.error.message}</div> : null}
+    </Form>
   );
 }
 ```
