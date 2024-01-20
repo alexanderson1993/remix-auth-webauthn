@@ -195,10 +195,11 @@ export class WebAuthnStrategy<User> extends Strategy<
     return rp;
   }
 
-  async generateOptions(
+  async generateOptions<ExtraData>(
     request: Request,
     sessionStorage: SessionStorage<SessionData, SessionData>,
-    user: User | null
+    user: User | null,
+    extraData?: ExtraData
   ) {
     let session = await sessionStorage.getSession(
       request.headers.get("Cookie")
@@ -226,7 +227,8 @@ export class WebAuthnStrategy<User> extends Strategy<
 
     const crypto = await import("tiny-webcrypto");
 
-    const options: WebAuthnOptionsResponse = {
+    type ExtraKey = ExtraData extends undefined ? undefined : ExtraData;
+    const options: WebAuthnOptionsResponse & { extra: ExtraKey } = {
       usernameAvailable,
       rp,
       user: userDetails
@@ -240,6 +242,7 @@ export class WebAuthnStrategy<User> extends Strategy<
         type: "public-key",
         transports: transports as AuthenticatorTransportFuture[],
       })),
+      extra: extraData as ExtraKey
     };
 
     session.set("challenge", options.challenge);
