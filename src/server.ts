@@ -242,7 +242,7 @@ export class WebAuthnStrategy<User> extends Strategy<
         type: "public-key",
         transports: transports as AuthenticatorTransportFuture[],
       })),
-      extra: extraData as ExtraKey
+      extra: extraData as ExtraKey,
     };
 
     session.set("challenge", options.challenge);

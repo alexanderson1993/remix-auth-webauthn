@@ -71,7 +71,7 @@ If you're just playing around, you can use this stub in-memory database.
 
 ```ts
 // /app/db.server.ts
-import { type Authenticator } from "remix-auth-webauthn";
+import { type Authenticator } from "remix-auth-webauthn/server";
 
 export type User = { id: string; username: string };
 
@@ -126,7 +126,7 @@ This strategy tries not to make assumptions about your database structure, so it
 
 ```ts
 // /app/authenticator.server.ts
-import { WebAuthnStrategy } from "remix-auth-webauthn";
+import { WebAuthnStrategy } from "remix-auth-webauthn/server";
 import {
   getAuthenticators,
   getUserByUsername,
@@ -281,6 +281,8 @@ Here's what the forms might look like in practice:
 
 ```tsx
 // /app/routes/_auth.login.ts
+import { handleFormSubmit } from "remix-auth-webauthn/browser";
+
 export default function Login() {
   const options = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();

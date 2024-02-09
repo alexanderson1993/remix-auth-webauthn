@@ -1,11 +1,13 @@
 import type * as React from "react";
-import type { WebAuthnOptionsResponse } from "./strategy.js";
+import type { WebAuthnOptionsResponse } from "./server.js";
 import {
   startAuthentication,
   startRegistration,
 } from "@simplewebauthn/browser";
 
 export * from "@simplewebauthn/browser";
+
+export { WebAuthnOptionsResponse };
 
 export let nanoid = (t = 21) =>
   crypto

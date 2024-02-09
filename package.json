@@ -1,8 +1,23 @@
 {
   "name": "remix-auth-webauthn",
-  "version": "0.1.1",
-  "main": "./build/index.js",
-  "types": "./build/index.d.ts",
+  "version": "0.2.0",
+  "exports": {
+    ".": {
+      "require": "./build/strategy.js",
+      "import": "./build/strategy.js",
+      "types": "./build/strategy.d.ts"
+    },
+    "./handleFormSubmit": {
+      "require": "./build/handleFormSubmit.js",
+      "import": "./build/handleFormSubmit.js",
+      "types": "./build/handleFormSubmit.d.ts"
+    },
+    "./strategy": {
+      "require": "./build/strategy.js",
+      "import": "./build/strategy.js",
+      "types": "./build/strategy.d.ts"
+    }
+  },
   "author": "Alex Anderson",
   "type": "module",
   "repository": {
