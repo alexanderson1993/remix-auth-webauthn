@@ -1,21 +1,21 @@
 {
   "name": "remix-auth-webauthn",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "exports": {
     ".": {
-      "require": "./build/strategy.js",
-      "import": "./build/strategy.js",
-      "types": "./build/strategy.d.ts"
+      "require": "./build/server.js",
+      "import": "./build/server.js",
+      "types": "./build/server.d.ts"
     },
-    "./handleFormSubmit": {
-      "require": "./build/handleFormSubmit.js",
-      "import": "./build/handleFormSubmit.js",
-      "types": "./build/handleFormSubmit.d.ts"
+    "./browser": {
+      "require": "./build/browser.js",
+      "import": "./build/browser.js",
+      "types": "./build/browser.d.ts"
     },
-    "./strategy": {
-      "require": "./build/strategy.js",
-      "import": "./build/strategy.js",
-      "types": "./build/strategy.d.ts"
+    "./server": {
+      "require": "./build/server.js",
+      "import": "./build/server.js",
+      "types": "./build/server.d.ts"
     }
   },
   "author": "Alex Anderson",
