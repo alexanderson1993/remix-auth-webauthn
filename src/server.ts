@@ -17,7 +17,7 @@ import type {
   AuthenticatorTransportFuture,
   PublicKeyCredentialDescriptorJSON,
   RegistrationResponseJSON,
-} from "@simplewebauthn/typescript-types";
+} from "@simplewebauthn/types";
 
 interface WebAuthnAuthenticator {
   credentialID: string;
@@ -313,7 +313,7 @@ export class WebAuthnStrategy<User> extends Strategy<
           } = verification.registrationInfo;
 
           const newAuthenticator = {
-            credentialID: uint8ArrayToBase64Url(credentialID),
+            credentialID,
             credentialPublicKey: uint8ArrayToBase64Url(credentialPublicKey),
             counter,
             credentialBackedUp: credentialBackedUp ? 1 : 0,
@@ -346,7 +346,7 @@ export class WebAuthnStrategy<User> extends Strategy<
             credentialPublicKey: base64UrlToUint8Array(
               authenticator.credentialPublicKey
             ),
-            credentialID: base64UrlToUint8Array(authenticator.credentialID),
+            credentialID: authenticator.credentialID,
             transports: authenticator.transports.split(
               ","
             ) as AuthenticatorTransportFuture[],
