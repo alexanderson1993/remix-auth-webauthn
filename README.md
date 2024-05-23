@@ -309,6 +309,12 @@ export default function Login() {
 }
 ```
 
+You can set the [`attestationType`](https://simplewebauthn.dev/docs/packages/server#1a-supported-attestation-formats) in the second parameter of `handleFormSubmit`. If omitted, it defaults to `none`:
+
+```tsx
+handleFormSubmit(options, { attestationType: "direct" });
+```
+
 ## TODO
 
 - Implement [Conditional UI](https://github.com/w3c/webauthn/wiki/Explainer:-WebAuthn-Conditional-UI)

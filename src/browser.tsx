@@ -31,6 +31,12 @@ export function handleFormSubmit(
   config?: {
     /** Generate an unique user ID when registering new users */
     generateUserId?: () => string;
+
+    /**
+     * Specify the preference regarding attestation conveyance during credential generation.
+     * @link https://www.w3.org/TR/webauthn-2/#enumdef-attestationconveyancepreference
+     */
+    attestationType?: AttestationConveyancePreference;
   }
 ) {
   return async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -102,7 +108,7 @@ export function handleFormSubmit(
                 },
               ],
               timeout: 90 * 1000,
-              attestation: "none",
+              attestation: config?.attestationType || "none",
               authenticatorSelection: {
                 residentKey: "discouraged",
                 requireResidentKey: false,
