@@ -312,7 +312,7 @@ export default function Login() {
 You can set the [`attestationType`](https://simplewebauthn.dev/docs/packages/server#1a-supported-attestation-formats) in the second parameter of `handleFormSubmit`. If omitted, it defaults to `none`:
 
 ```tsx
-handleFormSubmit(options, { attestationType: "direct" });
+onSubmit={handleFormSubmit(options, { attestationType: "direct" })}
 ```
 
 ## TODO
