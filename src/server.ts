@@ -12,31 +12,17 @@ import {
   verifyRegistrationResponse,
   verifyAuthenticationResponse,
 } from "@simplewebauthn/server";
+import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import type {
   AuthenticationResponseJSON,
   AuthenticatorTransportFuture,
   PublicKeyCredentialDescriptorJSON,
   RegistrationResponseJSON,
-} from "@simplewebauthn/typescript-types";
+} from "@simplewebauthn/types";
 
 interface WebAuthnAuthenticator {
   credentialID: string;
   transports: string[];
-}
-
-function uint8ArrayToBase64Url(uint8Array: Uint8Array) {
-  const base64String = btoa(String.fromCharCode(...uint8Array));
-  return base64String.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-}
-
-function base64UrlToUint8Array(string: string) {
-  const base64 = string.replace(/-/g, "+").replace(/_/g, "/");
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
 }
 
 export interface Authenticator {
@@ -234,7 +220,7 @@ export class WebAuthnStrategy<User> extends Strategy<
       user: userDetails
         ? { displayName: userDetails.username, ...userDetails }
         : null,
-      challenge: uint8ArrayToBase64Url(
+      challenge: isoBase64URL.fromBuffer(
         crypto.default.getRandomValues(new Uint8Array(32))
       ),
       authenticators: authenticators.map(({ credentialID, transports }) => ({
@@ -313,8 +299,8 @@ export class WebAuthnStrategy<User> extends Strategy<
           } = verification.registrationInfo;
 
           const newAuthenticator = {
-            credentialID: uint8ArrayToBase64Url(credentialID),
-            credentialPublicKey: uint8ArrayToBase64Url(credentialPublicKey),
+            credentialID,
+            credentialPublicKey: isoBase64URL.fromBuffer(credentialPublicKey),
             counter,
             credentialBackedUp: credentialBackedUp ? 1 : 0,
             credentialDeviceType,
@@ -343,10 +329,10 @@ export class WebAuthnStrategy<User> extends Strategy<
           expectedRPID: rp.id,
           authenticator: {
             ...authenticator,
-            credentialPublicKey: base64UrlToUint8Array(
+            credentialPublicKey: isoBase64URL.toBuffer(
               authenticator.credentialPublicKey
             ),
-            credentialID: base64UrlToUint8Array(authenticator.credentialID),
+            credentialID: authenticator.credentialID,
             transports: authenticator.transports.split(
               ","
             ) as AuthenticatorTransportFuture[],
