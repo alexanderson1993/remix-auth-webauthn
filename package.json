@@ -3,19 +3,19 @@
   "version": "0.2.1",
   "exports": {
     ".": {
+      "types": "./build/server.d.ts",
       "require": "./build/server.js",
-      "import": "./build/server.js",
-      "types": "./build/server.d.ts"
+      "import": "./build/server.js"
     },
     "./browser": {
+      "types": "./build/browser.d.ts",
       "require": "./build/browser.js",
-      "import": "./build/browser.js",
-      "types": "./build/browser.d.ts"
+      "import": "./build/browser.js"
     },
     "./server": {
+      "types": "./build/server.d.ts",
       "require": "./build/server.js",
-      "import": "./build/server.js",
-      "types": "./build/server.d.ts"
+      "import": "./build/server.js"
     }
   },
   "author": "Alex Anderson",
