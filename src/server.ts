@@ -1,7 +1,7 @@
 import {
-  json,
   type SessionStorage,
   type SessionData,
+  Session,
 } from "@remix-run/server-runtime";
 import {
   AuthenticateOptions,
@@ -31,7 +31,7 @@ export interface Authenticator {
   credentialPublicKey: string;
   counter: number;
   credentialDeviceType: string;
-  credentialBackedUp: number;
+  credentialBackedUp: boolean;
   transports: string;
 }
 
@@ -183,14 +183,9 @@ export class WebAuthnStrategy<User> extends Strategy<
 
   async generateOptions<ExtraData>(
     request: Request,
-    sessionStorage: SessionStorage<SessionData, SessionData>,
     user: User | null,
     extraData?: ExtraData
   ) {
-    let session = await sessionStorage.getSession(
-      request.headers.get("Cookie")
-    );
-
     let authenticators: WebAuthnAuthenticator[] = [];
     let userDetails: UserDetails | null = null;
     let usernameAvailable: boolean | null = null;
@@ -231,17 +226,20 @@ export class WebAuthnStrategy<User> extends Strategy<
       extra: extraData as ExtraKey,
     };
 
-    session.set("challenge", options.challenge);
-
-    return json(options, {
-      status: 200,
-      headers: {
-        "Set-Cookie": await sessionStorage.commitSession(session),
-        "Cache-Control": "no-store",
-      },
-    });
+    return options;
   }
-
+  private getChallenge(
+    session: Session<SessionData, SessionData>,
+    options: AuthenticateOptions
+  ) {
+    if (
+      typeof options.context?.challenge === "string" &&
+      options.context?.challenge !== ""
+    ) {
+      return options.context.challenge;
+    }
+    return session.get("challenge");
+  }
   async authenticate(
     request: Request,
     sessionStorage: SessionStorage<SessionData, SessionData>,
@@ -258,12 +256,13 @@ export class WebAuthnStrategy<User> extends Strategy<
       if (request.method !== "POST")
         throw new Error("The WebAuthn strategy only supports POST requests.");
 
-      const expectedChallenge = session.get("challenge");
+      const expectedChallenge = this.getChallenge(session, options);
 
-      if (!expectedChallenge)
+      if (!expectedChallenge) {
         throw new Error(
-          "Expected challenge not found. Please pass it as an option to the authenticate function."
+          "Expected challenge not found. It either needs to set to the `challenge` property on the auth session, or passed as context to the authenticate function."
         );
+      }
 
       // Based on the authenticator response, either verify registration,
       // or verify authentication
@@ -302,7 +301,7 @@ export class WebAuthnStrategy<User> extends Strategy<
             credentialID,
             credentialPublicKey: isoBase64URL.fromBuffer(credentialPublicKey),
             counter,
-            credentialBackedUp: credentialBackedUp ? 1 : 0,
+            credentialBackedUp,
             credentialDeviceType,
             transports: "",
           };

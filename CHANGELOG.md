@@ -5,6 +5,28 @@
 This is a *BREAKING CHANGE*.
 
 - Upgrade to SimpleWebAuthn v10, which requires Node v20 TLS. Make sure you upgrade to Node 20 before using this package.
+- `webAuthnStrategy.generateOptions` no longer returns `json` data, to better support Single Fetch. You'll need to manually store the challenge in the session or some other storage.
+
+```ts
+// /app/routes/_auth.login.ts
+export async function loader({ request, response }: LoaderFunctionArgs) {
+  const user = await authenticator.isAuthenticated(request);
+  let session = await sessionStorage.getSession(
+    request.headers.get("Cookie")
+  );
+
+  const options = webAuthnStrategy.generateOptions(request, user);
+
+  // Set the challenge in a session cookie so it can be accessed later.
+  session.set("challenge", options.challenge)
+  
+  // Update the cookie
+  response.headers.append("Set-Cookie", await sessionStorage.commitSession(session))
+  response.headers.set("Cache-Control":"no-store")
+
+  return options;
+}
+```
 
 ## 0.2.1
 

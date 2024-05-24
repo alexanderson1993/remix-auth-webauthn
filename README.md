@@ -233,16 +233,49 @@ The login page will need a loader to supply the WebAuthn options from the server
 
 ```ts
 // /app/routes/_auth.login.ts
-export async function loader({ request }: LoaderFunctionArgs) {
+export async function loader({ request, response }: LoaderFunctionArgs) {
   const user = await authenticator.isAuthenticated(request);
+  let session = await sessionStorage.getSession(
+    request.headers.get("Cookie")
+  );
 
-  return webAuthnStrategy.generateOptions(request, sessionStorage, user);
+  const options = webAuthnStrategy.generateOptions(request, user);
+
+  // Set the challenge in a session cookie so it can be accessed later.
+  session.set("challenge", options.challenge)
+  
+  // Update the cookie
+  response.headers.append("Set-Cookie", await sessionStorage.commitSession(session))
+  response.headers.set("Cache-Control":"no-store")
+
+  return options;
 }
 
 export async function action({ request }: ActionFunctionArgs) {
   try {
     await authenticator.authenticate("webauthn", request, {
       successRedirect: "/",
+    });
+    return { error: null };
+  } catch (error) {
+    // This allows us to return errors to the page without triggering the error boundary.
+    if (error instanceof Response && error.status >= 400) {
+      return { error: (await error.json()) as { message: string } };
+    }
+    throw error;
+  }
+}
+```
+
+If you choose to store the challenge somewhere other than session storage, such as in a database, you can pass it as context to the authenticate function in your action.
+
+```ts
+export async function action({ request }: ActionFunctionArgs) {
+  const challenge = await getChallenge(request)
+  try {
+    await authenticator.authenticate("webauthn", request, {
+      successRedirect: "/",
+      context: { challenge }
     });
     return { error: null };
   } catch (error) {
