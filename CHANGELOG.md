@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+This is a *BREAKING CHANGE*.
+
+- Upgrade to SimpleWebAuthn v10, which requires Node v20 TLS. Make sure you upgrade to Node 20 before using this package.
+
 ## 0.2.1
 
 This is a *BREAKING CHANGE*.

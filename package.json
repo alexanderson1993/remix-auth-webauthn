@@ -1,6 +1,6 @@
 {
   "name": "remix-auth-webauthn",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "exports": {
     ".": {
       "types": "./build/server.d.ts",
@@ -28,9 +28,7 @@
   "scripts": {
     "build": "tsc --project tsconfig.json && npx esbuild src/* --outdir=build --platform=node --format=esm",
     "typecheck": "tsc --project tsconfig.json --noEmit",
-    "lint": "eslint --ext .ts,.tsx src/",
-    "test": "jest --config=config/jest.config.ts --passWithNoTests",
-    "coverage": "npm run test -- --coverage"
+    "lint": "eslint --ext .ts,.tsx src/"
   },
   "keywords": [
     "remix",
