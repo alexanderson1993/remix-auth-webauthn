@@ -112,6 +112,7 @@ export function handleFormSubmit(
               authenticatorSelection: {
                 residentKey: "discouraged",
                 requireResidentKey: false,
+                userVerification: "preferred",
               },
               extensions: { credProps: true },
             })
