@@ -33,6 +33,7 @@ export interface Authenticator {
   credentialDeviceType: string;
   credentialBackedUp: boolean;
   transports: string;
+  aaguid: string;
 }
 
 export interface UserDetails {
@@ -296,6 +297,7 @@ export class WebAuthnStrategy<User> extends Strategy<
             counter,
             credentialBackedUp,
             credentialDeviceType,
+            aaguid,
           } = verification.registrationInfo;
 
           const newAuthenticator = {
@@ -305,6 +307,7 @@ export class WebAuthnStrategy<User> extends Strategy<
             credentialBackedUp,
             credentialDeviceType,
             transports: "",
+            aaguid,
           };
 
           user = await this.verify({
