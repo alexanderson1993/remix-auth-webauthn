@@ -61,6 +61,8 @@ interface Authenticator {
   // SQL: `VARCHAR(255)` and store string array or a CSV string
   // Ex: ['usb' | 'ble' | 'nfc' | 'internal']
   transports: string;
+  // SQL: `VARCHAR(36)` or similar, since AAGUIDs are 36 characters in length
+  aaguid: string;
 }
 ```
 
@@ -243,7 +245,7 @@ export async function loader({ request, response }: LoaderFunctionArgs) {
 
   // Set the challenge in a session cookie so it can be accessed later.
   session.set("challenge", options.challenge)
-  
+
   // Update the cookie
   response.headers.append("Set-Cookie", await sessionStorage.commitSession(session))
   response.headers.set("Cache-Control":"no-store")
@@ -271,11 +273,11 @@ If you choose to store the challenge somewhere other than session storage, such 
 
 ```ts
 export async function action({ request }: ActionFunctionArgs) {
-  const challenge = await getChallenge(request)
+  const challenge = await getChallenge(request);
   try {
     await authenticator.authenticate("webauthn", request, {
       successRedirect: "/",
-      context: { challenge }
+      context: { challenge },
     });
     return { error: null };
   } catch (error) {
