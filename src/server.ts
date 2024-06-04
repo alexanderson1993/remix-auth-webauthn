@@ -286,6 +286,7 @@ export class WebAuthnStrategy<User> extends Strategy<
           expectedChallenge,
           expectedOrigin: rp.origin,
           expectedRPID: rp.id,
+          requireUserVerification: false,
         });
 
         if (verification.verified && verification.registrationInfo) {
@@ -336,6 +337,7 @@ export class WebAuthnStrategy<User> extends Strategy<
               ","
             ) as AuthenticatorTransportFuture[],
           },
+          requireUserVerification: false,
         });
 
         if (!verification.verified)
