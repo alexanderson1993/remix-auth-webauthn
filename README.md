@@ -389,7 +389,3 @@ To learn more about best practices for passkey management, refer to Google's [Pa
 ## TODO
 
 - Implement [Conditional UI](https://github.com/w3c/webauthn/wiki/Explainer:-WebAuthn-Conditional-UI)
-
-```
-
-```
