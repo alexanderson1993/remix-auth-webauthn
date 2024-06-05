@@ -61,6 +61,8 @@ interface Authenticator {
   // SQL: `VARCHAR(255)` and store string array or a CSV string
   // Ex: ['usb' | 'ble' | 'nfc' | 'internal']
   transports: string;
+  // SQL: `VARCHAR(36)` or similar, since AAGUIDs are 36 characters in length
+  aaguid: string;
 }
 ```
 
@@ -243,7 +245,7 @@ export async function loader({ request, response }: LoaderFunctionArgs) {
 
   // Set the challenge in a session cookie so it can be accessed later.
   session.set("challenge", options.challenge)
-  
+
   // Update the cookie
   response.headers.append("Set-Cookie", await sessionStorage.commitSession(session))
   response.headers.set("Cache-Control":"no-store")
@@ -271,11 +273,11 @@ If you choose to store the challenge somewhere other than session storage, such 
 
 ```ts
 export async function action({ request }: ActionFunctionArgs) {
-  const challenge = await getChallenge(request)
+  const challenge = await getChallenge(request);
   try {
     await authenticator.authenticate("webauthn", request, {
       successRedirect: "/",
-      context: { challenge }
+      context: { challenge },
     });
     return { error: null };
   } catch (error) {
@@ -347,6 +349,42 @@ You can set the [`attestationType`](https://simplewebauthn.dev/docs/packages/ser
 ```tsx
 onSubmit={handleFormSubmit(options, { attestationType: "direct" })}
 ```
+
+## Displaying passkeys to the user
+
+An important part of supporting passkeys in your app is allowing your users to manage their passkeys on a settings page or similar. Users should be able to see a list of their passkeys, delete passkeys from your database, and register new passkeys.
+
+You can use the `getUserAuthenticators` function on the strategy instance to get a list of passkeys associated with the user:
+
+```tsx
+// /app/routes/settings.tsx
+export async function loader({ request }: LoaderFunctionArgs) {
+  const user = await authenticator.isAuthenticated(request);
+  if (!user) {
+    return redirect("/login");
+  }
+
+  const authenticators = await webAuthnStrategy.getUserAuthenticators(user);
+
+  return json({ authenticators });
+};
+
+export default function Settings() {
+  const data = useLoaderData();
+
+  return (
+    <ul>
+      {data.authenticators.map((authenticator) => (
+        ...
+      ))}
+    </ul>
+  );
+}
+```
+
+When listing passkeys, it's also helpful to display the name of the device that registered the passkey to the user so they can distinguish between them (especially when they have multiple passkeys registered). To accomplish this, you can use the community-sourced list available in the [passkey-authenticator-aaguids](https://github.com/passkeydeveloper/passkey-authenticator-aaguids) repository to match each authenticator's `aaguid` to its registering device and display the name (and even a brand icon) to the user.
+
+To learn more about best practices for passkey management, refer to Google's [Passkeys user journeys](https://developers.google.com/identity/passkeys/ux/user-journeys) guide.
 
 ## TODO
 
