@@ -2,7 +2,7 @@
   "compilerOptions": {
     "lib": ["DOM", "DOM.Iterable", "ES2019"],
     "esModuleInterop": true,
-    "moduleResolution": "Node",
+    "moduleResolution": "bundler",
     "module": "ESNext",
     "target": "ES2019",
     "strict": true,

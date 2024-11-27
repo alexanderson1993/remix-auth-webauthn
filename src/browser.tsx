@@ -1,15 +1,15 @@
-import type * as React from "react";
-import type { WebAuthnOptionsResponse } from "./server.js";
 import {
   startAuthentication,
   startRegistration,
 } from "@simplewebauthn/browser";
+import type * as React from "react";
+import type { WebAuthnOptionsResponse } from "./server.js";
 
 export * from "@simplewebauthn/browser";
 
-export { WebAuthnOptionsResponse };
+export type { WebAuthnOptionsResponse };
 
-export let nanoid = (t = 21) =>
+export const nanoid = (t = 21) =>
   crypto
     .getRandomValues(new Uint8Array(t))
     // eslint-disable-next-line unicorn/no-array-reduce
@@ -80,41 +80,45 @@ export function handleFormSubmit(
       type === "authentication"
         ? JSON.stringify(
             await startAuthentication({
-              challenge: options.challenge,
-              allowCredentials: options.authenticators,
-              rpId: options.rp.id,
-              userVerification: "preferred",
-              timeout: 90 * 1000,
+              optionsJSON: {
+                challenge: options.challenge,
+                allowCredentials: options.authenticators,
+                rpId: options.rp.id,
+                userVerification: "preferred",
+                timeout: 90 * 1000,
+              },
             })
           )
         : JSON.stringify(
             await startRegistration({
-              challenge: options.challenge,
-              excludeCredentials: options.authenticators,
-              rp: options.rp,
-              user: {
-                id: config?.generateUserId?.() || nanoid(),
-                name: username!,
-                displayName: username!,
-              },
-              pubKeyCredParams: [
-                {
-                  alg: -7,
-                  type: "public-key",
+              optionsJSON: {
+                challenge: options.challenge,
+                excludeCredentials: options.authenticators,
+                rp: options.rp,
+                user: {
+                  id: config?.generateUserId?.() || nanoid(),
+                  name: username!,
+                  displayName: username!,
                 },
-                {
-                  alg: -257,
-                  type: "public-key",
+                pubKeyCredParams: [
+                  {
+                    alg: -7,
+                    type: "public-key",
+                  },
+                  {
+                    alg: -257,
+                    type: "public-key",
+                  },
+                ],
+                timeout: 90 * 1000,
+                attestation: config?.attestationType || "none",
+                authenticatorSelection: {
+                  residentKey: "discouraged",
+                  requireResidentKey: false,
+                  userVerification: "preferred",
                 },
-              ],
-              timeout: 90 * 1000,
-              attestation: config?.attestationType || "none",
-              authenticatorSelection: {
-                residentKey: "discouraged",
-                requireResidentKey: false,
-                userVerification: "preferred",
+                extensions: { credProps: true },
               },
-              extensions: { credProps: true },
             })
           );
 

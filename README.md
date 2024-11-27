@@ -79,10 +79,10 @@ export type User = { id: string; username: string };
 
 const authenticators = new Map<string, Authenticator>();
 const users = new Map<string, User>();
-export function getAuthenticatorById(id: string) {
+export async function getAuthenticatorById(id: string) {
   return authenticators.get(id) || null;
 }
-export function getAuthenticators(user: User | null) {
+export async function getAuthenticators(user: User | null) {
   if (!user) return [];
 
   const userAuthenticators: Authenticator[] = [];
@@ -94,7 +94,7 @@ export function getAuthenticators(user: User | null) {
 
   return userAuthenticators;
 }
-export function getUserByUsername(username: string) {
+export async function getUserByUsername(username: string) {
   users.forEach((user) => {
     if (user.username === username) {
       return user;
@@ -102,16 +102,16 @@ export function getUserByUsername(username: string) {
   });
   return null;
 }
-export function getUserById(id: string) {
+export async function getUserById(id: string) {
   return users.get(id) || null;
 }
-export function createAuthenticator(
+export async function createAuthenticator(
   authenticator: Omit<Authenticator, "userId">,
   userId: string
 ) {
-  authenticators.set(authenticator.credentialID, { ...authenticator, userId });
+  authenticators.set(authenticator.id, { ...authenticator, userId });
 }
-export function createUser(username: string) {
+export async function createUser(username: string) {
   const user = { id: Math.random().toString(36), username };
   users.set(user.id, user);
   return user;
@@ -128,20 +128,22 @@ This strategy tries not to make assumptions about your database structure, so it
 
 ```ts
 // /app/authenticator.server.ts
-import { WebAuthnStrategy } from "remix-auth-webauthn/server";
-import {
-  getAuthenticators,
-  getUserByUsername,
-  getAuthenticatorById,
-  type User,
-  createUser,
-  createAuthenticator,
-  getUserById,
-} from "./db";
 import { Authenticator } from "remix-auth";
-import { sessionStorage } from "./session.server";
+import {
+  WebAuthnStrategy,
+  Authenticator as WebAuthnAuthenticator,
+} from "remix-auth-webauthn";
+import {
+  createAuthenticator,
+  createUser,
+  getAuthenticatorById,
+  getAuthenticators,
+  getUserById,
+  getUserByUsername,
+  User,
+} from "~/utils/db.server";
 
-export let authenticator = new Authenticator<User>(sessionStorage);
+export let authenticator = new Authenticator<User>();
 
 export const webAuthnStrategy = new WebAuthnStrategy<User>(
   {
@@ -173,7 +175,7 @@ export const webAuthnStrategy = new WebAuthnStrategy<User>(
     getAuthenticatorById: (id) => getAuthenticatorById(id),
   },
   async function verify({ authenticator, type, username }) {
-    // Verify Implementation Here
+    // ...Implement later
   }
 );
 
@@ -195,9 +197,7 @@ const webAuthnStrategy = new WebAuthnStrategy(
   },
   async function verify({ authenticator, type, username }) {
     let user: User | null = null;
-    const savedAuthenticator = await getAuthenticatorById(
-      authenticator.credentialID
-    );
+    const savedAuthenticator = await getAuthenticatorById(authenticator.id);
     if (type === "registration") {
       // Check if the authenticator exists in the database
       if (savedAuthenticator) {

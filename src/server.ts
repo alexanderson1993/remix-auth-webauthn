@@ -1,16 +1,6 @@
 import {
-  type SessionStorage,
-  type SessionData,
-  Session,
-} from "@remix-run/server-runtime";
-import {
-  AuthenticateOptions,
-  Strategy,
-  StrategyVerifyCallback,
-} from "remix-auth";
-import {
-  verifyRegistrationResponse,
   verifyAuthenticationResponse,
+  verifyRegistrationResponse,
 } from "@simplewebauthn/server";
 import { isoBase64URL } from "@simplewebauthn/server/helpers";
 import type {
@@ -19,16 +9,17 @@ import type {
   PublicKeyCredentialDescriptorJSON,
   RegistrationResponseJSON,
 } from "@simplewebauthn/types";
-
+import { Strategy } from "remix-auth/strategy";
+import { Session, SessionData } from "react-router";
 interface WebAuthnAuthenticator {
-  credentialID: string;
+  id: string;
   transports: string[];
 }
 
 export interface Authenticator {
-  credentialID: string;
+  id: string;
   userId: string;
-  credentialPublicKey: string;
+  publicKey: string;
   counter: number;
   credentialDeviceType: string;
   credentialBackedUp: boolean;
@@ -153,7 +144,7 @@ export class WebAuthnStrategy<User> extends Strategy<
 
   constructor(
     options: WebAuthnOptions<User>,
-    verify: StrategyVerifyCallback<User, WebAuthnVerifyParams>
+    verify: Strategy.VerifyFunction<User, WebAuthnVerifyParams>
   ) {
     super(verify);
     this.rpName = options.rpName;
@@ -207,8 +198,6 @@ export class WebAuthnStrategy<User> extends Strategy<
       usernameAvailable = false;
     }
 
-    const crypto = await import("tiny-webcrypto");
-
     type ExtraKey = ExtraData extends undefined ? undefined : ExtraData;
     const options: WebAuthnOptionsResponse & { extra: ExtraKey } = {
       usernameAvailable,
@@ -217,7 +206,7 @@ export class WebAuthnStrategy<User> extends Strategy<
         ? { displayName: userDetails.username, ...userDetails }
         : null,
       challenge: isoBase64URL.fromBuffer(
-        crypto.default.getRandomValues(new Uint8Array(32))
+        crypto.getRandomValues(new Uint8Array(32))
       ),
       authenticators: authenticators.map(({ credentialID, transports }) => ({
         id: credentialID,
@@ -229,162 +218,115 @@ export class WebAuthnStrategy<User> extends Strategy<
 
     return options;
   }
-  private getChallenge(
-    session: Session<SessionData, SessionData>,
-    options: AuthenticateOptions
-  ) {
-    if (
-      typeof options.context?.challenge === "string" &&
-      options.context?.challenge !== ""
-    ) {
-      return options.context.challenge;
-    }
+  private getChallenge(session: Session<SessionData, SessionData>) {
+    // if (
+    //   typeof options.context?.challenge === "string" &&
+    //   options.context?.challenge !== ""
+    // ) {
+    //   return options.context.challenge;
+    // }
     return session.get("challenge");
   }
-  async authenticate(
-    request: Request,
-    sessionStorage: SessionStorage<SessionData, SessionData>,
-    options: AuthenticateOptions
-  ): Promise<User> {
-    let session = await sessionStorage.getSession(
+  async authenticate(request: Request): Promise<User> {
+    const session = await sessionStorage.getSession(
       request.headers.get("Cookie")
     );
+
+    const rp = await this.getRP(request);
+
+    if (request.method !== "POST")
+      throw new Error("The WebAuthn strategy only supports POST requests.");
+
+    const expectedChallenge = this.getChallenge(session);
+
+    if (!expectedChallenge) {
+      throw new Error(
+        "Expected challenge not found. It either needs to set to the `challenge` property on the auth session, or passed as context to the authenticate function."
+      );
+    }
+
+    // Based on the authenticator response, either verify registration,
+    // or verify authentication
+    const formData = await request.formData();
+    let data: unknown;
     try {
-      let user: User | null = session.get(options.sessionKey) ?? null;
+      const responseData = formData.get("response");
+      if (typeof responseData !== "string") throw new Error("Error");
+      data = JSON.parse(responseData);
+    } catch {
+      throw new Error("Invalid passkey response JSON.");
+    }
 
-      const rp = await this.getRP(request);
+    const type = formData.get("type");
+    let username = formData.get("username");
 
-      if (request.method !== "POST")
-        throw new Error("The WebAuthn strategy only supports POST requests.");
+    if (typeof username !== "string") username = null;
+    if (type === "registration") {
+      if (!username) throw new Error("Username is a required form value.");
+      const verification = await verifyRegistrationResponse({
+        response: data as RegistrationResponseJSON,
+        expectedChallenge,
+        expectedOrigin: rp.origin,
+        expectedRPID: rp.id,
+        requireUserVerification: false,
+      });
 
-      const expectedChallenge = this.getChallenge(session, options);
+      if (verification.verified && verification.registrationInfo) {
+        const {
+          credential: { id, publicKey, counter, transports },
+          credentialBackedUp,
+          credentialDeviceType,
+          aaguid,
+        } = verification.registrationInfo;
 
-      if (!expectedChallenge) {
-        throw new Error(
-          "Expected challenge not found. It either needs to set to the `challenge` property on the auth session, or passed as context to the authenticate function."
-        );
-      }
-
-      // Based on the authenticator response, either verify registration,
-      // or verify authentication
-      const formData = await request.formData();
-      let data: unknown;
-      try {
-        const responseData = formData.get("response");
-        if (typeof responseData !== "string") throw new Error("Error");
-        data = JSON.parse(responseData);
-      } catch {
-        throw new Error("Invalid passkey response JSON.");
-      }
-      const type = formData.get("type");
-      let username = formData.get("username");
-
-      if (typeof username !== "string") username = null;
-      if (type === "registration") {
-        if (!username) throw new Error("Username is a required form value.");
-        const verification = await verifyRegistrationResponse({
-          response: data as RegistrationResponseJSON,
-          expectedChallenge,
-          expectedOrigin: rp.origin,
-          expectedRPID: rp.id,
-          requireUserVerification: false,
-        });
-
-        if (verification.verified && verification.registrationInfo) {
-          const {
-            credentialPublicKey,
-            credentialID,
-            counter,
-            credentialBackedUp,
-            credentialDeviceType,
-            aaguid,
-          } = verification.registrationInfo;
-
-          const newAuthenticator = {
-            credentialID,
-            credentialPublicKey: isoBase64URL.fromBuffer(credentialPublicKey),
-            counter,
-            credentialBackedUp,
-            credentialDeviceType,
-            transports: "",
-            aaguid,
-          };
-
-          user = await this.verify({
-            authenticator: newAuthenticator,
-            type: "registration",
-            username,
-          });
-        } else {
-          throw new Error("Passkey verification failed.");
-        }
-      } else if (type === "authentication") {
-        const authenticationData = data as AuthenticationResponseJSON;
-        const authenticator = await this.getAuthenticatorById(
-          authenticationData.id
-        );
-        if (!authenticator) throw new Error("Passkey not found.");
-
-        const verification = await verifyAuthenticationResponse({
-          response: authenticationData,
-          expectedChallenge,
-          expectedOrigin: rp.origin,
-          expectedRPID: rp.id,
-          authenticator: {
-            ...authenticator,
-            credentialPublicKey: isoBase64URL.toBuffer(
-              authenticator.credentialPublicKey
-            ),
-            credentialID: authenticator.credentialID,
-            transports: authenticator.transports.split(
-              ","
-            ) as AuthenticatorTransportFuture[],
-          },
-          requireUserVerification: false,
-        });
-
-        if (!verification.verified)
-          throw new Error("Passkey verification failed.");
-
-        user = await this.verify({
-          authenticator,
-          type: "authentication",
+        const newAuthenticator = {
+          id,
+          publicKey: isoBase64URL.fromBuffer(publicKey),
+          counter,
+          credentialBackedUp,
+          credentialDeviceType,
+          transports: transports?.join(",") || "",
+          aaguid,
+        };
+        return this.verify({
+          authenticator: newAuthenticator,
+          type: "registration",
           username,
         });
       } else {
-        throw new Error("Invalid verification type.");
+        throw new Error("Passkey verification failed.");
       }
-
-      // Verify either registration or authentication
-      return this.success(user, request, sessionStorage, options);
-    } catch (error) {
-      if (error instanceof Error) {
-        return await this.failure(
-          error.message,
-          request,
-          sessionStorage,
-          options,
-          error
-        );
-      }
-
-      if (typeof error === "string") {
-        return await this.failure(
-          error,
-          request,
-          sessionStorage,
-          options,
-          new Error(error)
-        );
-      }
-
-      return await this.failure(
-        "Unknown error",
-        request,
-        sessionStorage,
-        options,
-        new Error(JSON.stringify(error, null, 2))
+    } else if (type === "authentication") {
+      const authenticationData = data as AuthenticationResponseJSON;
+      const authenticator = await this.getAuthenticatorById(
+        authenticationData.id
       );
+      if (!authenticator) throw new Error("Passkey not found.");
+
+      const verification = await verifyAuthenticationResponse({
+        response: authenticationData,
+        expectedChallenge,
+        expectedOrigin: rp.origin,
+        expectedRPID: rp.id,
+        credential: {
+          ...authenticator,
+          publicKey: isoBase64URL.toBuffer(authenticator.publicKey),
+          transports: authenticator.transports.split(
+            ","
+          ) as AuthenticatorTransportFuture[],
+        },
+        requireUserVerification: false,
+      });
+
+      if (!verification.verified)
+        throw new Error("Passkey verification failed.");
+
+      return this.verify({
+        authenticator,
+        type: "authentication",
+        username,
+      });
     }
+    throw new Error("Invalid verification type.");
   }
 }

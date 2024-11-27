@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+This is a *BREAKING CHANGE*.
+
+
+
 ## 0.3.0
 
 This is a *BREAKING CHANGE*.
