@@ -1,10 +1,18 @@
 # Changelog
 
-## 0.4.0
+## 0.5.0
 
 This is a *BREAKING CHANGE*.
 
+- Upgrade to Remix Auth 4.0.0, which provides support for React Router v7.
+- The `getUserAuthenticators`, `getUserDetails`, `getUserByUsername`, and `getAuthenticatorById` methods passed to the `WebAuthnStrategy` constructor are now required to be async functions that return a promise.
+- `WebAuthnStrategy` now requires a React Router `sessionStorage` object to be passed to the constructor to store the challenge string.
+- For better compatibility with SimpleWebAuthn v10, the optional `generateUserId` config option passed to `handleFormSubmit` must now return a Uint8Array with a length of 32 or 64. If not passed, the library with automatically generate a secure ID.
+- Added a new example app which demonstrates how the library is to be used.
 
+## 0.4.0
+
+This is a *BREAKING CHANGE*.
 
 ## 0.3.0
 

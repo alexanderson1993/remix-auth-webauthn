@@ -10,7 +10,7 @@ import type {
   RegistrationResponseJSON,
 } from "@simplewebauthn/types";
 import { Strategy } from "remix-auth/strategy";
-import { Session, SessionData } from "react-router";
+import { SessionStorage } from "react-router";
 interface WebAuthnAuthenticator {
   id: string;
   transports: string[];
@@ -54,6 +54,10 @@ export interface WebAuthnOptionsResponse {
  */
 export interface WebAuthnOptions<User> {
   /**
+   * The React Router session storage which stores the challenge value
+   */
+  sessionStorage: any;
+  /**
    * Relaying Party name - The human-readable name of your app
    */
   rpName: string | ((request: Request) => Promise<string> | string);
@@ -71,7 +75,7 @@ export interface WebAuthnOptions<User> {
     | ((request: Request) => Promise<string | string[]> | string | string[]);
 
   /**
-   * Session key to store the challenge in
+   * Session key to store the challenge in. Defaults to "challenge"
    */
   challengeSessionKey?: string;
 
@@ -81,8 +85,8 @@ export interface WebAuthnOptions<User> {
    * @returns Authenticator
    */
   getUserAuthenticators: (
-    user: User | null
-  ) => Promise<WebAuthnAuthenticator[]> | WebAuthnAuthenticator[];
+    user: User | null | undefined
+  ) => Promise<WebAuthnAuthenticator[]>;
   /**
    * Transform the user object into the shape expected by the strategy.
    * You can use a regular username, the users email address, or something else.
@@ -90,23 +94,21 @@ export interface WebAuthnOptions<User> {
    * @returns UserDetails
    */
   getUserDetails: (
-    user: User | null
-  ) => Promise<UserDetails | null> | UserDetails | null;
+    user: User | null | undefined
+  ) => Promise<UserDetails | null>;
 
   /**
    * Find a user in the database with their username/email.
    * @param username
    * @returns User object
    */
-  getUserByUsername: (username: string) => Promise<User | null> | User | null;
+  getUserByUsername: (username: string) => Promise<User | null>;
   /**
    * Find an authenticator in the database by its credential ID
    * @param id
    * @returns Authenticator
    */
-  getAuthenticatorById: (
-    id: string
-  ) => Promise<Authenticator | null> | Authenticator | null;
+  getAuthenticatorById: (id: string) => Promise<Authenticator | null>;
 }
 
 /**
@@ -124,6 +126,8 @@ export class WebAuthnStrategy<User> extends Strategy<
   WebAuthnVerifyParams
 > {
   name = "webauthn";
+  sessionStorage: SessionStorage;
+  challengeSessionKey: string = "challenge";
 
   rpName: string | ((request: Request) => Promise<string> | string);
   rpID: string | ((request: Request) => Promise<string> | string);
@@ -132,21 +136,20 @@ export class WebAuthnStrategy<User> extends Strategy<
     | string[]
     | ((request: Request) => Promise<string | string[]> | string | string[]);
   getUserAuthenticators: (
-    user: User | null
-  ) => Promise<WebAuthnAuthenticator[]> | WebAuthnAuthenticator[];
+    user: User | null | undefined
+  ) => Promise<WebAuthnAuthenticator[]>;
   getUserDetails: (
-    user: User | null
-  ) => Promise<UserDetails | null> | UserDetails | null;
-  getUserByUsername: (username: string) => Promise<User | null> | User | null;
-  getAuthenticatorById: (
-    id: string
-  ) => Promise<Authenticator | null> | Authenticator | null;
+    user: User | null | undefined
+  ) => Promise<UserDetails | null>;
+  getUserByUsername: (username: string) => Promise<User | null>;
+  getAuthenticatorById: (id: string) => Promise<Authenticator | null>;
 
   constructor(
     options: WebAuthnOptions<User>,
     verify: Strategy.VerifyFunction<User, WebAuthnVerifyParams>
   ) {
     super(verify);
+    this.sessionStorage = options.sessionStorage;
     this.rpName = options.rpName;
     this.rpID = options.rpID;
     this.origin = options.origin;
@@ -154,6 +157,7 @@ export class WebAuthnStrategy<User> extends Strategy<
     this.getUserDetails = options.getUserDetails;
     this.getUserByUsername = options.getUserByUsername;
     this.getAuthenticatorById = options.getAuthenticatorById;
+    this.challengeSessionKey = options.challengeSessionKey || "challenge";
   }
 
   async getRP(request: Request) {
@@ -173,19 +177,15 @@ export class WebAuthnStrategy<User> extends Strategy<
     return rp;
   }
 
-  async generateOptions<ExtraData>(
-    request: Request,
-    user: User | null,
-    extraData?: ExtraData
-  ) {
+  async generateOptions(request: Request, user: User | null | undefined) {
     let authenticators: WebAuthnAuthenticator[] = [];
     let userDetails: UserDetails | null = null;
     let usernameAvailable: boolean | null = null;
 
     const rp = await this.getRP(request);
 
+    const username = new URL(request.url).searchParams.get("username");
     if (!user) {
-      const username = new URL(request.url).searchParams.get("username");
       if (username) {
         usernameAvailable = true;
         user = await this.getUserByUsername(username || "");
@@ -198,8 +198,7 @@ export class WebAuthnStrategy<User> extends Strategy<
       usernameAvailable = false;
     }
 
-    type ExtraKey = ExtraData extends undefined ? undefined : ExtraData;
-    const options: WebAuthnOptionsResponse & { extra: ExtraKey } = {
+    const options: WebAuthnOptionsResponse = {
       usernameAvailable,
       rp,
       user: userDetails
@@ -208,27 +207,17 @@ export class WebAuthnStrategy<User> extends Strategy<
       challenge: isoBase64URL.fromBuffer(
         crypto.getRandomValues(new Uint8Array(32))
       ),
-      authenticators: authenticators.map(({ credentialID, transports }) => ({
-        id: credentialID,
+      authenticators: authenticators.map(({ id, transports }) => ({
+        id,
         type: "public-key",
         transports: transports as AuthenticatorTransportFuture[],
       })),
-      extra: extraData as ExtraKey,
     };
 
     return options;
   }
-  private getChallenge(session: Session<SessionData, SessionData>) {
-    // if (
-    //   typeof options.context?.challenge === "string" &&
-    //   options.context?.challenge !== ""
-    // ) {
-    //   return options.context.challenge;
-    // }
-    return session.get("challenge");
-  }
   async authenticate(request: Request): Promise<User> {
-    const session = await sessionStorage.getSession(
+    const session = await this.sessionStorage.getSession(
       request.headers.get("Cookie")
     );
 
@@ -237,11 +226,11 @@ export class WebAuthnStrategy<User> extends Strategy<
     if (request.method !== "POST")
       throw new Error("The WebAuthn strategy only supports POST requests.");
 
-    const expectedChallenge = this.getChallenge(session);
+    const expectedChallenge = session.get(this.challengeSessionKey);
 
     if (!expectedChallenge) {
       throw new Error(
-        "Expected challenge not found. It either needs to set to the `challenge` property on the auth session, or passed as context to the authenticate function."
+        `Expected challenge not found. It needs to set to the \`${this.challengeSessionKey}\` property on the auth session storage.`
       );
     }
 

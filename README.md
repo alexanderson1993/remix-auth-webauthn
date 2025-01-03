@@ -39,6 +39,40 @@ This project depends on `remix-auth`. Install it and [follow the setup instructi
 npm install remix-auth remix-auth-webauthn
 ```
 
+### Session storage
+
+You'll need to store the Passkey challenge in some kind of session storage to avoid replay attacks. You can use the same session storage which stores your user object.
+
+```ts
+import { createCookieSessionStorage } from "react-router";
+import { User } from "~/utils/db.server";
+
+type SessionData = {
+  user: User;
+  challenge?: string;
+};
+
+type SessionFlashData = {
+  error: string;
+};
+
+export const userSession = createCookieSessionStorage<
+  SessionData,
+  SessionFlashData
+>({
+  cookie: {
+    name: "__session",
+    httpOnly: true,
+    maxAge: 60 * 60 * 24 * 30, // One month
+    path: "/",
+    sameSite: "lax",
+    secrets: ["s3cret1"],
+    secure: process.env.NODE_ENV === "production",
+  },
+});
+```
+
+
 ### Database
 
 This strategy requires database access to store user Authenticators. The kind of database doesn't matter, but the strategy expects authenticators to match this interface (as provided by @simplewebauthn/server):
@@ -82,7 +116,7 @@ const users = new Map<string, User>();
 export async function getAuthenticatorById(id: string) {
   return authenticators.get(id) || null;
 }
-export async function getAuthenticators(user: User | null) {
+export async function getAuthenticators(user: User | null | undefined) {
   if (!user) return [];
 
   const userAuthenticators: Authenticator[] = [];
@@ -147,6 +181,8 @@ export let authenticator = new Authenticator<User>();
 
 export const webAuthnStrategy = new WebAuthnStrategy<User>(
   {
+    // The React Router session storage where the "challenge" key is stored
+    sessionStorage: userSession,
     // The human-readable name of your app
     // Type: string | (response:Response) => Promise<string> | string
     rpName: "Remix Auth WebAuthn",
@@ -235,60 +271,53 @@ The login page will need a loader to supply the WebAuthn options from the server
 
 ```ts
 // /app/routes/_auth.login.ts
-export async function loader({ request, response }: LoaderFunctionArgs) {
-  const user = await authenticator.isAuthenticated(request);
-  let session = await sessionStorage.getSession(
-    request.headers.get("Cookie")
-  );
+import type { Route } from "./+types/home";
 
-  const options = webAuthnStrategy.generateOptions(request, user);
+export async function loader({ request }: Route.LoaderArgs) {
+  const session = await userSession.getSession(request.headers.get("cookie"));
+  const user = session.get("user");
+  const options = await webAuthnStrategy.generateOptions(request, user);
 
   // Set the challenge in a session cookie so it can be accessed later.
-  session.set("challenge", options.challenge)
+  session.set("challenge", options.challenge);
 
   // Update the cookie
-  response.headers.append("Set-Cookie", await sessionStorage.commitSession(session))
-  response.headers.set("Cache-Control":"no-store")
-
-  return options;
+  return data(
+    { options, user },
+    {
+      headers: {
+        "Set-Cookie": await userSession.commitSession(session),
+        "Cache-Control": "no-store",
+      },
+    }
+  );
 }
 
-export async function action({ request }: ActionFunctionArgs) {
+export async function action({ request }: Route.ActionArgs) {
+  const session = await userSession.getSession(request.headers.get("cookie"));
+
   try {
-    await authenticator.authenticate("webauthn", request, {
-      successRedirect: "/",
+    const user = await authenticator.authenticate("webauthn", request);
+    session.set("user", user);
+
+    // Redirect to the logged-in page.
+    throw redirect("/", {
+      headers: {
+        "Set-Cookie": await userSession.commitSession(session),
+      },
     });
-    return { error: null };
   } catch (error) {
     // This allows us to return errors to the page without triggering the error boundary.
-    if (error instanceof Response && error.status >= 400) {
-      return { error: (await error.json()) as { message: string } };
+    if (error instanceof Error) {
+      return { error, user: null };
     }
+    // Throw other errors, such as responses that need to redirect the browser.
     throw error;
   }
 }
 ```
 
-If you choose to store the challenge somewhere other than session storage, such as in a database, you can pass it as context to the authenticate function in your action.
-
-```ts
-export async function action({ request }: ActionFunctionArgs) {
-  const challenge = await getChallenge(request);
-  try {
-    await authenticator.authenticate("webauthn", request, {
-      successRedirect: "/",
-      context: { challenge },
-    });
-    return { error: null };
-  } catch (error) {
-    // This allows us to return errors to the page without triggering the error boundary.
-    if (error instanceof Response && error.status >= 400) {
-      return { error: (await error.json()) as { message: string } };
-    }
-    throw error;
-  }
-}
-```
+> Make sure the session storage that you use to set your challenge is the same storage you passed to the WebAuthnStrategy class
 
 ## Set up the form
 
@@ -318,30 +347,43 @@ Here's what the forms might look like in practice:
 // /app/routes/_auth.login.ts
 import { handleFormSubmit } from "remix-auth-webauthn/browser";
 
-export default function Login() {
-  const options = useLoaderData<typeof loader>();
-  const actionData = useActionData<typeof action>();
+export default function Home({ loaderData, actionData }: Route.ComponentProps) {
   return (
-    <Form onSubmit={handleFormSubmit(options)} method="POST">
-      <label>
-        Username
-        <input type="text" name="username" />
-      </label>
-      <button formMethod="GET">Check Username</button>
+    <Form
+      onSubmit={handleFormSubmit(loaderData.options)}
+      method="POST"
+      className="flex flex-col gap-2 m-8 w-64"
+    >
+      <label>Username</label>
+      <input
+        type="text"
+        name="username"
+        placeholder="alexanderson1993"
+        className="p-2 rounded"
+      />
+      <button formMethod="GET" className="px-2 py-1 bg-blue-500 rounded">
+        Check Username
+      </button>
       <button
         name="intent"
         value="registration"
-        disabled={options.usernameAvailable !== true}
+        disabled={loaderData.options.usernameAvailable !== true}
+        className="px-2 py-1 bg-orange-500 rounded disabled:opacity-50"
       >
         Register
       </button>
-      <button name="intent" value="authentication">
+      <button
+        name="intent"
+        value="authentication"
+        className="px-2 py-1 bg-green-500 rounded"
+      >
         Authenticate
       </button>
       {actionData?.error ? <div>{actionData.error.message}</div> : null}
     </Form>
-  );
+  )
 }
+
 ```
 
 You can set the [`attestationType`](https://simplewebauthn.dev/docs/packages/server#1a-supported-attestation-formats) in the second parameter of `handleFormSubmit`. If omitted, it defaults to `none`:

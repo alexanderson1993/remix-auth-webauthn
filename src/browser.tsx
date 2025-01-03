@@ -1,4 +1,5 @@
 import {
+  bufferToBase64URLString,
   startAuthentication,
   startRegistration,
 } from "@simplewebauthn/browser";
@@ -9,28 +10,13 @@ export * from "@simplewebauthn/browser";
 
 export type { WebAuthnOptionsResponse };
 
-export const nanoid = (t = 21) =>
-  crypto
-    .getRandomValues(new Uint8Array(t))
-    // eslint-disable-next-line unicorn/no-array-reduce
-    .reduce(
-      (t, e) =>
-        (t +=
-          (e &= 63) < 36
-            ? e.toString(36)
-            : e < 62
-            ? (e - 26).toString(36).toUpperCase()
-            : e > 62
-            ? "-"
-            : "_"),
-      ""
-    );
+export const nanoid = (t = 32) => crypto.getRandomValues(new Uint8Array(t));
 
 export function handleFormSubmit(
   options: WebAuthnOptionsResponse,
   config?: {
     /** Generate an unique user ID when registering new users */
-    generateUserId?: () => string;
+    generateUserId?: () => Uint8Array;
 
     /**
      * Specify the preference regarding attestation conveyance during credential generation.
@@ -96,7 +82,9 @@ export function handleFormSubmit(
                 excludeCredentials: options.authenticators,
                 rp: options.rp,
                 user: {
-                  id: config?.generateUserId?.() || nanoid(),
+                  id: bufferToBase64URLString(
+                    config?.generateUserId?.() || nanoid()
+                  ),
                   name: username!,
                   displayName: username!,
                 },

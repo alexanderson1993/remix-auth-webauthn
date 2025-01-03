@@ -1,8 +1,5 @@
 import { Authenticator } from "remix-auth";
-import {
-  WebAuthnStrategy,
-  Authenticator as WebAuthnAuthenticator,
-} from "remix-auth-webauthn";
+import { WebAuthnStrategy } from "remix-auth-webauthn";
 import {
   createAuthenticator,
   createUser,
@@ -12,11 +9,14 @@ import {
   getUserByUsername,
   User,
 } from "~/utils/db.server";
+import { userSession } from "~/utils/session.server";
 
 export let authenticator = new Authenticator<User>();
 
 export const webAuthnStrategy = new WebAuthnStrategy<User>(
   {
+    // The React Router session storage where the "challenge" key is stored
+    sessionStorage: userSession,
     // The human-readable name of your app
     // Type: string | (response:Response) => Promise<string> | string
     rpName: "Remix Auth WebAuthn",
@@ -38,7 +38,7 @@ export const webAuthnStrategy = new WebAuthnStrategy<User>(
     },
     // Transform the user object into the shape expected by the strategy.
     // You can use a regular username, the users email address, or something else.
-    getUserDetails: (user) =>
+    getUserDetails: async (user) =>
       user ? { id: user.id, username: user.username } : null,
     // Find a user in the database with their username/email.
     getUserByUsername: (username) => getUserByUsername(username),
@@ -77,4 +77,4 @@ export const webAuthnStrategy = new WebAuthnStrategy<User>(
   }
 );
 
-authenticator.use(webAuthnStrategy);
+authenticator.use(webAuthnStrategy, "webauthn");

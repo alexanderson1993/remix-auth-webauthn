@@ -7,7 +7,7 @@ const users = new Map<string, User>();
 export async function getAuthenticatorById(id: string) {
   return authenticators.get(id) || null;
 }
-export async function getAuthenticators(user: User | null) {
+export async function getAuthenticators(user: User | null | undefined) {
   if (!user) return [];
 
   const userAuthenticators: Authenticator[] = [];
